@@ -52,6 +52,6 @@ Integration of
 
 ## Acknowledgements 
 - Thanks for [FAST_LIO](https://github.com/hku-mars/FAST_LIO) authors.
-
+- You may have an interest in [this version of FAST-LIO + Loop closure](https://github.com/yanliang-wang/FAST_LIO_LC), implemented by [yanliang-wang](https://github.com/yanliang-wang)
 
 
