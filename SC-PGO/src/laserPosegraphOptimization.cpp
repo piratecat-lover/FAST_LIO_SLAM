@@ -121,9 +121,14 @@ bool useGPS = true;
 sensor_msgs::NavSatFix::ConstPtr currGPS;
 bool hasGPSforThisKF = false;
 bool gpsOffsetInitialized = false; 
-double gpsAltitudeInitOffset = 0.0;
+
+// Added X, Y initial offsets - 이승섭
+double gpsZInitOffset = 0.0;
+double gpsXInitOffset=0.0;
+double gpsYInitOffset=0.0;
 double recentOptimizedX = 0.0;
 double recentOptimizedY = 0.0;
+double recentOptimizedZ = 0.0;
 
 ros::Publisher pubMapAftPGO, pubOdomAftPGO, pubPathAftPGO;
 ros::Publisher pubLoopScanLocal, pubLoopSubmapLocal;
@@ -202,6 +207,8 @@ void laserCloudFullResHandler(const sensor_msgs::PointCloud2ConstPtr &_laserClou
 	mBuf.unlock();
 } // laserCloudFullResHandler
 
+
+// - 이승섭
 void gpsHandler(const sensor_msgs::NavSatFix::ConstPtr &_gps)
 {
     if(useGPS) {
@@ -229,10 +236,13 @@ void initNoises( void )
                     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure is okay but Cauchy is empirically good.
                     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6) );
 
+    // Added gps noise scores for X, Y - 이승섭
     double bigNoiseTolerentToXY = 1000000000.0; // 1e9
-    double gpsAltitudeNoiseScore = 250.0; // if height is misaligned after loop clsosing, use this value bigger
+    double gpsXNoiseScore = 250.0;
+    double gpsYNoiseScore = 250.0;
+    double gpsZNoiseScore = 250.0; // if height is misaligned after loop clsosing, use this value bigger
     gtsam::Vector robustNoiseVector3(3); // gps factor has 3 elements (xyz)
-    robustNoiseVector3 << bigNoiseTolerentToXY, bigNoiseTolerentToXY, gpsAltitudeNoiseScore; // means only caring altitude here. (because LOAM-like-methods tends to be asymptotically flyging)
+    robustNoiseVector3 << gpsXNoiseScore, gpsYNoiseScore, gpsZNoiseScore; // Changed noise vector for 3D gps - 이승섭
     robustGPSNoise = gtsam::noiseModel::Robust::Create(
                     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure is okay but Cauchy is empirically good.
                     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector3) );
@@ -546,12 +556,19 @@ void process_pg()
             if( ! isNowKeyFrame ) 
                 continue; 
 
+            // Added initial GPS offsets
             if( !gpsOffsetInitialized ) {
                 if(hasGPSforThisKF) { // if the very first frame 
-                    gpsAltitudeInitOffset = currGPS->altitude;
-                    gpsOffsetInitialized = true;
+                    gpsZInitOffset = currGPS->altitude;
+                    gpsYInitOffset = currGPS->latitude;
+                    gpsZInitOffset = currGPS->longitude;
+            ;
+             gpsOffsetInitialized = true;
                 } 
             }
+            double recentOptimizedZ = 0.0;
+            double recentOptimizedX = 0.0;
+            double recentOptimizedY = 0.0;
 
             //
             // Save data and Add consecutive node 
@@ -600,10 +617,18 @@ void process_pg()
                     gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(prev_node_idx, curr_node_idx, poseFrom.between(poseTo), odomNoise));
 
                     // gps factor 
+                    // Added X,Y gps factors - 이승섭
                     if(hasGPSforThisKF) {
-                        double curr_altitude_offseted = currGPS->altitude - gpsAltitudeInitOffset;
+                        double curr_altitude_offseted = currGPS->altitude - gpsZInitOffset;
+                        double curr_latitude_offseted = currGPS->latitude - gpsYInitOffset;
+                        double curr_longitude_offseted = currGPS->longitude - gpsXInitOffset;
+                ;
+                 
                         mtxRecentPose.lock();
-                        gtsam::Point3 gpsConstraint(recentOptimizedX, recentOptimizedY, curr_altitude_offseted); // in this example, only adjusting altitude (for x and y, very big noises are set) 
+                        gtsam::Point3 gpsConstraint(curr_longitude_offseted, curr_latitude_offseted, curr_altitude_offseted); // in this 
+                        double recentOptimizedZ = 0.0;
+                        double recentOptimizedX = 0.0;
+                        double recentOptimizedY = 0.0;
                         mtxRecentPose.unlock();
                         gtSAMgraph.add(gtsam::GPSFactor(curr_node_idx, gpsConstraint, robustGPSNoise));
                         cout << "GPS factor added at node " << curr_node_idx << endl;
